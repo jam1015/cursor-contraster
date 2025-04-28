@@ -35,6 +35,43 @@
 (require 'color)
 (require 'seq)
 
+
+;;;###autoload
+(defun color-contrast-ratio (c1 c2)
+  "Return the WCAG contrast ratio between colors C1 and C2.
+C1 and C2 are color names or RGB hex strings (e.g. \"#rrggbb\").
+Contrast ratio is (L₁ + 0.05) / (L₂ + 0.05), where L₁ is the
+lighter and L₂ the darker relative luminance :contentReference[oaicite:2]{index=2}."
+  (cl-labels
+      ((lum (col)
+         "Compute the relative luminance of COLOR (name or hex)."
+         (let* ((rgb   (apply #'color-name-to-rgb col))
+                (r     (nth 0 rgb))
+                (g     (nth 1 rgb))
+                (b     (nth 2 rgb))
+                ;; sRGB → linear
+                (r-lin (if (<= r 0.03928)
+                           (/ r 12.92)
+                         (expt (/ (+ r 0.055) 1.055) 2.4)))
+                (g-lin (if (<= g 0.03928)
+                           (/ g 12.92)
+                         (expt (/ (+ g 0.055) 1.055) 2.4)))
+                (b-lin (if (<= b 0.03928)
+                           (/ b 12.92)
+                         (expt (/ (+ b 0.055) 1.055) 2.4))))
+           ;; luminance L = 0.2126*R + 0.7152*G + 0.0722*B
+           (+ (* 0.2126 r-lin)
+              (* 0.7152 g-lin)
+              (* 0.0722 b-lin)))))
+    (let* ((L1 (funcall #'lum c1))
+           (L2 (funcall #'lum c2))
+           (lighter  (max L1 L2))
+           (darker   (min L1 L2)))
+      ;; ratio ∈ [1,21], e.g. 4.5:1 for normal text :contentReference[oaicite:3]{index=3}
+      (/ (+ lighter 0.05)
+         (+ darker  0.05)))))
+
+
 ;; Ensure after-load-theme-hook actually runs
 (unless (fboundp 'run-after-load-theme-hook)
   (defvar after-load-theme-hook nil
