@@ -58,8 +58,9 @@ If PALETTE is nil, regenerate via `cursor-contraster-generate-palette'."
         (when (and var shape (numberp idx) col)
           (set var (list shape col)))))))
 
-(defun cursor-contraster--run-update ()
-  "Internal: regenerate palette and reapply cursors."
+(defun cursor-contraster--run-update (&optional _theme)
+  "Internal: regenerate palette and reapply cursors.
+_THEME is ignored but required for `enable-theme-functions'."
   (when cursor-contraster--registered-specs
     (cursor-contraster-apply-cursors cursor-contraster--registered-specs)))
 
