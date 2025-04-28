@@ -44,8 +44,8 @@
 ;; (cursor-contraster-mode 1)
 ;;
 ;;; Code:
-
-
+(require 'cl-lib)
+(require 'color)
 (defun cursor-contraster--get-bg ()
   "Retrieve the current default face background."  
   (or (face-background 'default nil) "#000000"))
