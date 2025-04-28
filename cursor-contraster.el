@@ -45,8 +45,6 @@
 ;;
 ;;; Code:
 
-(require 'cl-lib)
-(require 'color)
 
 (defun cursor-contraster--get-bg ()
   "Retrieve the current default face background."  
