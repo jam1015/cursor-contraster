@@ -3,7 +3,7 @@
 ;; Copyright (C) 2025 Jordan Mandel
 ;; Author: Jordan Mandel
 ;; Version: 0.1
-;; Package-Requires: ((emacs "26.1") )
+;; Package-Requires: ((emacs "29.1") )
 ;; Keywords: convenience, faces, cursor
 ;; URL: https://github.com/jam1015/cursor-contraster
 ;; License: GPL-3.0-or-later
