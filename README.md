@@ -1,8 +1,3 @@
----
-lang: en
-title: cursor-contraster README
----
-
 # cursor-contraster
 
 `cursor-contraster` is a tiny Emacs utility that automatically generates
