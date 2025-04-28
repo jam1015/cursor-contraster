@@ -63,16 +63,18 @@ If PALETTE is nil, regenerate via `cursor-contraster-generate-palette'."
   (when cursor-contraster--registered-specs
     (cursor-contraster-apply-cursors cursor-contraster--registered-specs)))
 
+
 ;;;###autoload
 (define-minor-mode cursor-contraster-mode
-  "Global minor mode to auto-update cursor colors when theme changes."
+  "Global minor mode to auto-update cursor colors when the theme changes."
   :global t
   :group 'cursor-contraster
   (if cursor-contraster-mode
       (progn
-        (add-hook 'after-load-theme-hook #'cursor-contraster--run-update t)
+        (add-hook 'enable-theme-functions #'cursor-contraster--run-update t)
         (cursor-contraster--run-update))
-    (remove-hook 'after-load-theme-hook #'cursor-contraster--run-update)))
+    (remove-hook 'enable-theme-functions #'cursor-contraster--run-update)))
+
 
 ;;;###autoload
 (defun cursor-contraster-setup-with-specs (specs)
