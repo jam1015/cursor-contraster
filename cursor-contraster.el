@@ -3,24 +3,35 @@
 ;; Copyright (C) 2025 Jordan Mandel
 ;; Author: Jordan Mandel
 ;; Version: 0.1
-;; Package-Requires: ((emacs "29.1") )
+;; Package-Requires: ((emacs "24.1"))
 ;; Keywords: convenience, faces, cursor
 ;; URL: https://github.com/jam1015/cursor-contraster
 ;; License: GPL-3.0-or-later
-;; This program is free software; you can redistribute it and/or
-;; modify it under the terms of the GNU General Public License as
-;; published by the Free Software Foundation, either version 3 of the
-;; License, or (at your option) any later version.
+;;
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
 ;;
 ;;; Commentary:
 ;; `cursor-contraster` generates a set of highly distinguishable colors
 ;; using evenly spaced hues on the HSL color wheel, ensuring each
-;; cursor stands out against typical backgrounds.  It exposes custom
-;; settings for HSL parameters and contrast threshold, validates inputs,
-;; and restores original cursors when disabled.
+;; cursor stands out against typical backgrounds.
+;;
+;; **Features:**
+;; • `cursor-contraster-generate-palette` – return N distinct hex colors.
+;; • `cursor-contraster-apply-cursors` – apply a list of (:var SYMBOL :shape SHAPE :index IDX) specs.
+;; • `cursor-contraster-setup-with-specs` – apply specs now and register update hook.
+;; • `cursor-contraster-mode` – auto-update on theme changes.
 ;;
 ;; **Usage Example:**
 ;;
+;; ;; Require and setup specs for cursor variables:
 ;; (require 'cursor-contraster)
 ;; (cursor-contraster-setup-with-specs
 ;;  '((:var evil-god-state-cursor     :shape box    :index 8)
@@ -28,78 +39,13 @@
 ;;    (:var evil-insert-state-cursor  :shape bar    :index 10)
 ;;    (:var evil-visual-state-cursor  :shape hollow :index 11)
 ;;    (:var evil-normal-state-cursor  :shape hollow :index 12)))
+;;
+;; ;; Or enable automatic theme-based updates for all specs:
 ;; (cursor-contraster-mode 1)
 ;;
 ;;; Code:
 (require 'cl-lib)
 (require 'color)
-(require 'seq)
-
-
-;;;###autoload
-(defun cursor-contraster--contrast-ratio (c1 c2)
-  "Return the WCAG contrast ratio between colors C1 and C2.
-C1 and C2 are color names or RGB hex strings (e.g. \"#rrggbb\")."
-  (cl-labels
-      ((lum (col)
-         "Compute relative luminance of COL (name or hex)."
-         (let* ((rgb   (color-name-to-rgb col))
-                (r     (nth 0 rgb))
-                (g     (nth 1 rgb))
-                (b     (nth 2 rgb))
-                (lin (lambda (chan)
-                       (if (<= chan 0.03928)
-                           (/ chan 12.92)
-                         (expt (/ (+ chan 0.055) 1.055) 2.4))))
-                (r-lin (funcall lin r))
-                (g-lin (funcall lin g))
-                (b-lin (funcall lin b)))
-           (+ (* 0.2126 r-lin)
-              (* 0.7152 g-lin)
-              (* 0.0722 b-lin)))))
-    (let* ((L1      (lum c1))
-           (L2      (lum c2))
-           (light   (max L1 L2))
-           (dark    (min L1 L2)))
-      (/ (+ light 0.05)
-         (+ dark  0.05)))))
-
-
-;; Ensure after-load-theme-hook actually runs
-(unless (fboundp 'run-after-load-theme-hook)
-  (defvar after-load-theme-hook nil
-    "Hook run after `load-theme` is called.")
-  (advice-add
-   'load-theme :after
-   (lambda (&rest _args)
-     (run-hooks 'after-load-theme-hook))))
-
-
-(defgroup cursor-contraster nil
-  "Automatically generate contrasting cursor colors."
-  :group 'convenience)
-
-(defcustom cursor-contraster-saturation 0.8
-  "Saturation component for HSL color generation."
-  :type 'number
-  :group 'cursor-contraster)
-
-(defcustom cursor-contraster-lightness 0.65
-  "Lightness component for HSL color generation."
-  :type 'number
-  :group 'cursor-contraster)
-
-(defcustom cursor-contraster-contrast-threshold 4.5
-  "Minimum WCAG contrast ratio between cursor and background."
-  :type 'number
-  :group 'cursor-contraster)
-
-(defvar cursor-contraster--current-specs nil
-  "Currently active cursor-contraster specs.")
-
-(defvar cursor-contraster--original-cursor-values nil
-  "Alist of (VAR . ORIGINAL-VALUE) for restoration on disable.")
-
 (defun cursor-contraster--get-bg ()
   "Retrieve the current default face background."  
   (or (face-background 'default nil) "#000000"))
@@ -107,82 +53,48 @@ C1 and C2 are color names or RGB hex strings (e.g. \"#rrggbb\")."
 ;;;###autoload
 (defun cursor-contraster-generate-palette (&optional count)
   "Generate COUNT distinct contrasting colors as hex strings.
-Defaults to 16. Colors are evenly spaced in HSL space using
-`cursor-contraster-saturation` and `cursor-contraster-lightness`, and
-filtered to meet `cursor-contraster-contrast-threshold` if possible."  
-  (let* ((n (or count 16))
-         (bg (cursor-contraster--get-bg))
-         (raw (cl-loop for i below (* n 2)
-                       collect (apply #'color-rgb-to-hex
-                                      (color-hsl-to-rgb
-                                       (/ i (float (* n 2)))
-                                       cursor-contraster-saturation
-                                       cursor-contraster-lightness))))
-         (filtered
-          (seq-filter (lambda (hex)
-                        (>= (cursor-contraster--contrast-ratio bg hex)
-                            cursor-contraster-contrast-threshold))
-                      raw)))
-    (if (>= (length filtered) n)
-        (cl-subseq filtered 0 n)
-      (message "cursor-contraster: only %d/%d colors meet contrast threshold; using first %d raw colors"
-               (length filtered) n n)
-      (cl-subseq raw 0 n))))
+Defaults to 16.  Colors are evenly spaced in HSL space with fixed
+saturation and lightness for maximum visibility."
+  (let ((n (or count 16)))
+    (cl-loop for i from 0 below n
+             collect
+             (apply #'color-rgb-to-hex
+                    (color-hsl-to-rgb
+                     (/ i (float n))   ; hue
+                     0.8               ; saturation
+                     0.65)))))        ; lightness
 
 ;;;###autoload
 (defun cursor-contraster-apply-cursors (specs &optional palette)
-  "Apply cursor SPECs using PALETTE.
+  "Apply cursor color SPECS using PALETTE.
 SPECS is a list of plists (:var SYMBOL :shape SHAPE :index IDX).
-Valid SHAPE values are 'box, 'bar, or 'hollow. IDX must be within palette.
+Each entry sets SYMBOL to a list (SHAPE . COLOR).
 If PALETTE is nil, it is regenerated via `cursor-contraster-generate-palette'."
-  (let ((pal (or palette (cursor-contraster-generate-palette (length specs)))))
+  (let ((pal (or palette (cursor-contraster-generate-palette))))
     (dolist (s specs)
       (let* ((var   (plist-get s :var))
              (shape (plist-get s :shape))
              (idx   (plist-get s :index))
              (col   (nth idx pal)))
-        (unless (memq shape '(box bar hollow))
-          (user-error "cursor-contraster: invalid shape %S" shape))
-        (unless (and (numberp idx) (< idx (length pal)))
-          (user-error "cursor-contraster: index %S out of bounds (0..%d)"
-                      idx (1- (length pal))))
-        (when (and var shape col)
+        (when (and var shape (numberp idx) col)
           (set var (list shape col)))))))
 
 (defvar cursor-contraster-update-hook nil
   "Hook run with one argument: the latest palette list.
 Use this to apply your own cursor mappings via
-`cursor-contraster-apply-cursors`.")
+`cursor-contraster-apply-cursors`.
+
+Example:
+  (add-hook 'cursor-contraster-update-hook
+            (lambda (palette)
+              (cursor-contraster-apply-cursors
+               '((:var evil-normal-state-cursor :shape box :index 0))
+               palette)))")
 
 (defun cursor-contraster--run-update ()
-  "Internal: regenerate palette and run `cursor-contraster-update-hook`."
+  "Internal: regenerate palette and run `cursor-contraster-update-hook'."
   (run-hook-with-args 'cursor-contraster-update-hook
                       (cursor-contraster-generate-palette)))
-
-(defun cursor-contraster--reapply-specs (palette)
-  "Reapply saved `cursor-contraster--current-specs` using PALETTE."
-  (when cursor-contraster--current-specs
-    (cursor-contraster-apply-cursors cursor-contraster--current-specs palette)))
-
-;;;###autoload
-(defun cursor-contraster-setup-with-specs (specs)
-  "Apply SPECS now and register them to run on theme changes.
-SPECS is a list of plists (:var SYMBOL :shape SHAPE :index IDX).
-
-1) Save original cursor values if not already saved.
-2) Applies SPECS via `cursor-contraster-apply-cursors` immediately.
-3) Removes and adds `cursor-contraster--reapply-specs` to `cursor-contraster-update-hook`."
-  (unless cursor-contraster--original-cursor-values
-    (setq cursor-contraster--original-cursor-values
-          (mapcar (lambda (s)
-                    (let ((v (plist-get s :var)))
-                      (cons v (symbol-value v))))
-                  specs)))
-  (setq cursor-contraster--current-specs specs)
-  (remove-hook 'cursor-contraster-update-hook #'cursor-contraster--reapply-specs)
-  (add-hook 'cursor-contraster-update-hook #'cursor-contraster--reapply-specs t)
-  ;; Apply immediately:
-  (cursor-contraster-apply-cursors specs))
 
 ;;;###autoload
 (define-minor-mode cursor-contraster-mode
@@ -193,13 +105,20 @@ SPECS is a list of plists (:var SYMBOL :shape SHAPE :index IDX).
       (progn
         (add-hook 'after-load-theme-hook #'cursor-contraster--run-update t)
         (cursor-contraster--run-update))
-    ;; disabling: remove hook and restore originals
-    (remove-hook 'after-load-theme-hook #'cursor-contraster--run-update)
-    (when cursor-contraster--original-cursor-values
-      (dolist (pair cursor-contraster--original-cursor-values)
-        (set (car pair) (cdr pair)))
-      (setq cursor-contraster--original-cursor-values nil
-            cursor-contraster--current-specs nil))))
+    (remove-hook 'after-load-theme-hook #'cursor-contraster--run-update)))
+
+;;;###autoload
+(defun cursor-contraster-setup-with-specs (specs)
+  "Apply SPECS now and register them to run on theme changes.
+SPECS is a list of plists (:var SYMBOL :shape SHAPE :index IDX).
+
+1) Applies SPECS via `cursor-contraster-apply-cursors` immediately.
+2) Adds a hook to `cursor-contraster-update-hook` to reapply SPECS on updates."
+  (cursor-contraster-apply-cursors specs)
+  (add-hook 'cursor-contraster-update-hook
+            (lambda (palette)
+              (cursor-contraster-apply-cursors specs palette))
+            t))
 
 (provide 'cursor-contraster)
 ;;; cursor-contraster.el ends here
