@@ -7,6 +7,10 @@
 ;; Keywords: convenience, faces, cursor
 ;; URL: https://github.com/jam1015/cursor-contraster
 ;; License: GPL-3.0-or-later
+;; This program is free software; you can redistribute it and/or
+;; modify it under the terms of the GNU General Public License as
+;; published by the Free Software Foundation, either version 3 of the
+;; License, or (at your option) any later version.
 ;;
 ;;; Commentary:
 ;; `cursor-contraster` generates a set of highly distinguishable colors
@@ -30,6 +34,16 @@
 (require 'cl-lib)
 (require 'color)
 (require 'seq)
+
+;; Ensure after-load-theme-hook actually runs
+(unless (fboundp 'run-after-load-theme-hook)
+  (defvar after-load-theme-hook nil
+    "Hook run after `load-theme` is called.")
+  (advice-add
+   'load-theme :after
+   (lambda (&rest _args)
+     (run-hooks 'after-load-theme-hook))))
+
 
 (defgroup cursor-contraster nil
   "Automatically generate contrasting cursor colors."
